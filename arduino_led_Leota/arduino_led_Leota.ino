@@ -9,23 +9,23 @@ Based off Adafruit example test code for LPD8806-based RGB LED strip
 2013-07-17 Added input for LOR signal
 2013-08-06 Added IF statements to deal with LOR signal
 2013-08-08 Changed reset to function checked within light sequences
+2013-08-16 Changed outputs to hardware SPI write defaults, changed scanner function to draw twice per call (from 4x), some general house cleaning
 
 NOTE: Linking between Input 2 and Ground will cause sequence to start,
-removing will stop sequence
+removing will stop sequence immediately
 
 */
 
 #include "LPD8806.h"
 #include "SPI.h"
 
-int dataPin = 4;      //green wire!
-int clockPin = 3;     //yellow wire!
 int LORCue1Pin = 2;   //contact closure 1 from LOR show control
 boolean reset = false; //indication that show loop should end
- 
-LPD8806 strip = LPD8806(32, dataPin, clockPin); 
+int nLEDs = 32;     // Number of RGB LEDs in strand:
 
-void setup() 
+LPD8806 strip = LPD8806(nLEDs);         //  Hardware SPI for faster writes Data = pin 11 (green wire), clock = pin 13 (yellow wire)
+
+void setup()
   {
   strip.begin();                // Start up the LED strip
   Serial.begin(9600);           // set up Serial library at 9600 bps
@@ -39,9 +39,6 @@ void setup()
   strip.show();                // Update the strip, to start they are all 'off'
   }
 
-//void dither(uint32_t c, uint8_t wait);
-//void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait);
-
 void loop() 
   {
     if (reset == true)
@@ -53,15 +50,16 @@ void loop()
     while (digitalRead(LORCue1Pin)==LOW && reset == false)
     {  
         Serial.print("Enable received from LOR");
-        Serial.println("");
+        Serial.println("");      
         dither(strip.Color(0,32,0), 200);          // green, slow - to make brighter, increase each rgb param by factor of 2         
         dither(strip.Color(15,0,32), 200);          // violet, slow 
         scanner(0,32,0, 300);                       // green scan, slow  
         dither(strip.Color(15,0,0), 200);           // red, slow 
         dither(strip.Color(15,0,32), 200);          // violet, slow
-        scanner(0,32,0, 300);                       // green scan, slow    
+        scanner(15,0,0, 300);                       // red scan, slow    
         dither(strip.Color(0,32,0), 200);           // green, slow
         dither(strip.Color(15,0,32), 200);          // violet, slow 
+        scanner(0,32,0, 300);                       // blue scan, slow  
         dither(strip.Color(15,0,0), 200);           // red, slow 
         dither(strip.Color(15,0,32), 200);          // violet, slow  
         scanner(0,32,0, 300);                       // green scan, slow   
@@ -84,7 +82,7 @@ void turnoff()                                //No enable, no lights
 {                                                                     
   Serial.print("LOR says to turn off, waiting for next enable");   
   Serial.println("");
-  for (int i = 0; i < 256; i++)                                     
+  for (int i = 0; i < nLEDs; i++)                                     
   {                                                                 
     strip.setPixelColor(i, 0,0,0);                                  
     strip.show();   
@@ -94,16 +92,12 @@ void turnoff()                                //No enable, no lights
 
 void dither(uint32_t c, uint8_t wait) 
   {
-   
     int hiBit = 0;                                // Determine highest bit needed to represent pixel index
     int n = strip.numPixels() - 1;
-    
-    
     for(int bit=1; bit < 0x8000; bit <<= 1) 
       {
         if(n & bit) hiBit = bit;
       }
- 
     int bit, reverse;
     for(int i=0; i<(hiBit << 1); i++) 
       {                                               // Reverse the bits in i to create ordered dither:
@@ -133,14 +127,13 @@ void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait)       // "Larson sca
   int i, j, pos, dir;
   pos = 0;
   dir = 1;
-  for(i=0; i<((strip.numPixels()-1) * 8); i++)                    // Draw 5 pixels centered on pos.
+  for(i=0; i<((strip.numPixels()-1) * 4); i++)                    // Draw 5 pixels centered on pos. - change 4 to change how many wipes (this number is twice the number of round trips)
     {                   
      if(LORCue1Check() == true)    
        { 
          reset = true;
          return;               // return == break for functions
        }      
-      
       strip.setPixelColor(pos - 2, strip.Color(r/4, g/4, b/4));
       strip.setPixelColor(pos - 1, strip.Color(r/2, g/2, b/2));
       strip.setPixelColor(pos, strip.Color(r, g, b));
@@ -148,7 +141,6 @@ void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait)       // "Larson sca
       strip.setPixelColor(pos + 2, strip.Color(r/4, g/4, b/4));
       strip.show();
       delay(wait);
-  
       for(j=-2; j<= 2; j++) 
       strip.setPixelColor(pos+j, strip.Color(0,0,0));                
       pos += dir;                                           // Bounce off ends of strip
@@ -159,8 +151,8 @@ void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait)       // "Larson sca
       }   
       else if(pos >= strip.numPixels()) 
       {
-        pos = strip.numPixels() - 2;
+        pos = strip.numPixels() - 2; 
         dir = -dir;
       }
     }
- }
+  }
